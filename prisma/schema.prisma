@@ -106,7 +106,9 @@ model Post {
   
   categoryId  String
   category    Category  @relation(fields: [categoryId], references: [id])
-  
+
+  views       PostViewed[]   
+
   tags        PostTag[]
   comments    Comment[]
   
@@ -114,12 +116,26 @@ model Post {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+
   @@index([slug])
   @@index([authorId])
   @@index([categoryId])
   @@index([published])
   @@index([publishedAt])
   @@map("post")
+}
+
+model PostViewed {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  viewerIp  String
+  viewedAt  DateTime @default(now())
+
+  @@index([postId])
+  @@index([viewerIp])
+  @@map("post_viewed")
 }
 
 model Category {

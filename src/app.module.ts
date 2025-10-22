@@ -7,9 +7,17 @@ import { auth } from './lib/auth';
 import { ArticlesModule } from './articles/articles.module';
 import { CategoriesModule } from './categories/categories.module';
 import { TagsModule } from './tags/tags.module';
+import { StatsModule } from './stats/stats.module';
 
 @Module({
-  imports: [AuthModule.forRoot({ auth }), UsersModule, ArticlesModule, CategoriesModule, TagsModule],
+  imports: [
+    AuthModule.forRoot({ auth }),
+    UsersModule,
+    ArticlesModule,
+    CategoriesModule,
+    TagsModule,
+    StatsModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

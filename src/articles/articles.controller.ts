@@ -1,7 +1,24 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Put } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Put,
+  Req,
+} from '@nestjs/common';
+import type { Request } from 'express';
 import { ArticlesService } from './articles.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
+import {
+  Session,
+  UserSession,
+  AllowAnonymous,
+  OptionalAuth,
+} from '@thallesp/nestjs-better-auth';
 
 @Controller('articles')
 export class ArticlesController {
@@ -13,13 +30,18 @@ export class ArticlesController {
   }
 
   @Get()
+  @AllowAnonymous()
   findAll() {
     return this.articlesService.findAll();
   }
 
   @Get('slug/:slug')
-  findBySlug(@Param('slug') slug: string) {
-    return this.articlesService.findBySlug(slug);
+  findBySlug(@Param('slug') slug: string, @Req() req: Request) {
+    const ip =
+      req.headers['x-forwarded-for']?.toString().split(',')[0] ||
+      req.ip ||
+      'unknown';
+    return this.articlesService.findBySlug(slug, ip);
   }
 
   @Get(':id')

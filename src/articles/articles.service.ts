@@ -1,12 +1,21 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { PrismaClient } from '../../generated/prisma';
 import slugify from 'slugify';
+import * as CryptoJS from 'crypto-js';
 
 @Injectable()
 export class ArticlesService {
   private prisma = new PrismaClient();
+
+  private hashIp(ip: string): string {
+    return CryptoJS.SHA256(ip).toString();
+  }
 
   private generateSlug(title: string, baseSlug?: string): string {
     if (baseSlug) {
@@ -24,7 +33,10 @@ export class ArticlesService {
     });
   }
 
-  private async ensureUniqueSlug(slug: string, excludeId?: string): Promise<string> {
+  private async ensureUniqueSlug(
+    slug: string,
+    excludeId?: string,
+  ): Promise<string> {
     let uniqueSlug = slug;
     let counter = 1;
 
@@ -45,24 +57,119 @@ export class ArticlesService {
   }
 
   async create(createArticleDto: CreateArticleDto) {
-    const { tagIds, slug: providedSlug, title, ...articleData } = createArticleDto;
+    const {
+      tagIds,
+      tags,
+      categoryId,
+      category,
+      slug: providedSlug,
+      title,
+      ...articleData
+    } = createArticleDto;
 
     // Generate slug from title or use provided slug
     const baseSlug = this.generateSlug(title, providedSlug);
     const uniqueSlug = await this.ensureUniqueSlug(baseSlug);
+
+    // Handle category - create if name is provided, otherwise use ID
+    let finalCategoryId: string;
+
+    if (category) {
+      if (category.id) {
+        // Use existing category ID
+        finalCategoryId = category.id;
+      } else if (category.name) {
+        // Create or get existing category by name
+        const categorySlug = slugify(category.name, {
+          lower: true,
+          strict: true,
+          remove: /[*+~.()'"!:@]/g,
+        });
+
+        let existingCategory = await this.prisma.category.findUnique({
+          where: { slug: categorySlug },
+        });
+
+        if (!existingCategory) {
+          existingCategory = await this.prisma.category.create({
+            data: {
+              name: category.name,
+              slug: categorySlug,
+              description: category.description,
+              color: category.color,
+              icon: category.icon,
+            },
+          });
+        }
+
+        finalCategoryId = existingCategory.id;
+      } else {
+        throw new Error('Category must have either id or name');
+      }
+    } else if (categoryId) {
+      // Backward compatibility
+      finalCategoryId = categoryId;
+    } else {
+      throw new Error('Category is required');
+    }
+
+    // Handle tags - create if names are provided, otherwise use IDs
+    const tagConnections: Array<{ tag: { connect: { id: string } } }> = [];
+
+    if (tags && tags.length > 0) {
+      for (const tag of tags) {
+        if (tag.id) {
+          // Use existing tag ID
+          tagConnections.push({
+            tag: { connect: { id: tag.id } },
+          });
+        } else if (tag.name) {
+          // Create or get existing tag by name
+          const tagSlug = slugify(tag.name, {
+            lower: true,
+            strict: true,
+            remove: /[*+~.()'"!:@]/g,
+          });
+
+          let existingTag = await this.prisma.tag.findUnique({
+            where: { slug: tagSlug },
+          });
+
+          if (!existingTag) {
+            existingTag = await this.prisma.tag.create({
+              data: {
+                name: tag.name,
+                slug: tagSlug,
+              },
+            });
+          }
+
+          tagConnections.push({
+            tag: { connect: { id: existingTag.id } },
+          });
+        }
+      }
+    } else if (tagIds && tagIds.length > 0) {
+      // Backward compatibility
+      tagConnections.push(
+        ...tagIds.map((tagId) => ({
+          tag: { connect: { id: tagId } },
+        })),
+      );
+    }
 
     const article = await this.prisma.post.create({
       data: {
         ...articleData,
         title,
         slug: uniqueSlug,
-        tags: tagIds ? {
-          create: tagIds.map(tagId => ({
-            tag: {
-              connect: { id: tagId }
-            }
-          }))
-        } : undefined
+        categoryId: finalCategoryId,
+        tags:
+          tagConnections.length > 0
+            ? {
+                create: tagConnections,
+              }
+            : undefined,
       },
       include: {
         author: {
@@ -70,16 +177,16 @@ export class ArticlesService {
             id: true,
             name: true,
             email: true,
-            image: true
-          }
+            image: true,
+          },
         },
         category: true,
         tags: {
           include: {
-            tag: true
-          }
-        }
-      }
+            tag: true,
+          },
+        },
+      },
     });
 
     return article;
@@ -93,19 +200,19 @@ export class ArticlesService {
             id: true,
             name: true,
             email: true,
-            image: true
-          }
+            image: true,
+          },
         },
         category: true,
         tags: {
           include: {
-            tag: true
-          }
-        }
+            tag: true,
+          },
+        },
       },
       orderBy: {
-        createdAt: 'desc'
-      }
+        createdAt: 'desc',
+      },
     });
   }
 
@@ -118,14 +225,14 @@ export class ArticlesService {
             id: true,
             name: true,
             email: true,
-            image: true
-          }
+            image: true,
+          },
         },
         category: true,
         tags: {
           include: {
-            tag: true
-          }
+            tag: true,
+          },
         },
         comments: {
           include: {
@@ -133,20 +240,20 @@ export class ArticlesService {
               select: {
                 id: true,
                 name: true,
-                image: true
-              }
+                image: true,
+              },
             },
-            replies: true
+            replies: true,
           },
           where: {
             approved: true,
-            parentId: null
+            parentId: null,
           },
           orderBy: {
-            createdAt: 'desc'
-          }
-        }
-      }
+            createdAt: 'desc',
+          },
+        },
+      },
     });
 
     if (!article) {
@@ -156,13 +263,13 @@ export class ArticlesService {
     // Increment view count
     await this.prisma.post.update({
       where: { id },
-      data: { viewCount: { increment: 1 } }
+      data: { viewCount: { increment: 1 } },
     });
 
     return article;
   }
 
-  async findBySlug(slug: string) {
+  async findBySlug(slug: string, ip: string) {
     const article = await this.prisma.post.findUnique({
       where: { slug },
       include: {
@@ -171,14 +278,14 @@ export class ArticlesService {
             id: true,
             name: true,
             email: true,
-            image: true
-          }
+            image: true,
+          },
         },
         category: true,
         tags: {
           include: {
-            tag: true
-          }
+            tag: true,
+          },
         },
         comments: {
           include: {
@@ -186,69 +293,168 @@ export class ArticlesService {
               select: {
                 id: true,
                 name: true,
-                image: true
-              }
+                image: true,
+              },
             },
-            replies: true
+            replies: true,
           },
           where: {
             approved: true,
-            parentId: null
+            parentId: null,
           },
           orderBy: {
-            createdAt: 'desc'
-          }
-        }
-      }
+            createdAt: 'desc',
+          },
+        },
+      },
     });
 
     if (!article) {
       throw new NotFoundException(`Article with slug ${slug} not found`);
     }
 
-    // Increment view count
-    await this.prisma.post.update({
-      where: { slug },
-      data: { viewCount: { increment: 1 } }
+    // Hash the IP address
+    const hashedIp = this.hashIp(ip);
+
+    // Check if this IP has already viewed this article
+    const existingView = await this.prisma.postViewed.findFirst({
+      where: {
+        postId: article.id,
+        viewerIp: hashedIp,
+      },
     });
+
+    // Only increment view count if this is a new viewer
+    if (!existingView) {
+      await this.prisma.$transaction([
+        // Create the view record
+        this.prisma.postViewed.create({
+          data: {
+            postId: article.id,
+            viewerIp: hashedIp,
+          },
+        }),
+        // Increment view count
+        this.prisma.post.update({
+          where: { id: article.id },
+          data: { viewCount: { increment: 1 } },
+        }),
+      ]);
+    }
 
     return article;
   }
 
   async update(id: string, updateArticleDto: UpdateArticleDto) {
-    const { tagIds, slug: providedSlug, title, ...articleData } = updateArticleDto;
+    const {
+      tagIds,
+      tags,
+      categoryId,
+      category,
+      slug: providedSlug,
+      title,
+      ...articleData
+    } = updateArticleDto;
 
     // Check if article exists
     const existingArticle = await this.findOne(id);
 
     // Generate new slug if title is updated
-    let updatedData = { ...articleData };
+    let updatedData: any = { ...articleData };
 
     if (title || providedSlug) {
       const titleToUse = title || existingArticle.title;
       const baseSlug = this.generateSlug(titleToUse, providedSlug);
       const uniqueSlug = await this.ensureUniqueSlug(baseSlug, id);
-      updatedData = { ...updatedData, slug: uniqueSlug };
+      updatedData.slug = uniqueSlug;
     }
 
     if (title) {
-      updatedData = { ...updatedData, title };
+      updatedData.title = title;
     }
 
-    // If tagIds are provided, update them
-    if (tagIds !== undefined) {
+    // Handle category update - create if name is provided, otherwise use ID
+    if (category) {
+      if (category.id) {
+        updatedData.categoryId = category.id;
+      } else if (category.name) {
+        // Create or get existing category by name
+        const categorySlug = slugify(category.name, {
+          lower: true,
+          strict: true,
+          remove: /[*+~.()'"!:@]/g,
+        });
+
+        let existingCategory = await this.prisma.category.findUnique({
+          where: { slug: categorySlug },
+        });
+
+        if (!existingCategory) {
+          existingCategory = await this.prisma.category.create({
+            data: {
+              name: category.name,
+              slug: categorySlug,
+              description: category.description,
+              color: category.color,
+              icon: category.icon,
+            },
+          });
+        }
+
+        updatedData.categoryId = existingCategory.id;
+      }
+    } else if (categoryId) {
+      updatedData.categoryId = categoryId;
+    }
+
+    // Handle tags update - create if names are provided, otherwise use IDs
+    if (tags !== undefined || tagIds !== undefined) {
       // Delete existing tags
       await this.prisma.postTag.deleteMany({
-        where: { postId: id }
+        where: { postId: id },
       });
 
-      // Create new tags
-      if (tagIds.length > 0) {
+      const tagsToConnect: string[] = [];
+
+      if (tags && tags.length > 0) {
+        for (const tag of tags) {
+          if (tag.id) {
+            tagsToConnect.push(tag.id);
+          } else if (tag.name) {
+            // Create or get existing tag by name
+            const tagSlug = slugify(tag.name, {
+              lower: true,
+              strict: true,
+              remove: /[*+~.()'"!:@]/g,
+            });
+
+            let existingTag = await this.prisma.tag.findUnique({
+              where: { slug: tagSlug },
+            });
+
+            if (!existingTag) {
+              existingTag = await this.prisma.tag.create({
+                data: {
+                  name: tag.name,
+                  slug: tagSlug,
+                },
+              });
+            }
+
+            tagsToConnect.push(existingTag.id);
+          }
+        }
+      } else if (tagIds && tagIds.length > 0) {
+        tagsToConnect.push(...tagIds);
+      }
+
+      // Create new tag connections
+      if (tagsToConnect.length > 0) {
         await this.prisma.postTag.createMany({
-          data: tagIds.map(tagId => ({
+          data: tagsToConnect.map((tagId) => ({
             postId: id,
-            tagId
-          }))
+            tagId,
+          })),
         });
       }
     }
@@ -262,16 +468,16 @@ export class ArticlesService {
             id: true,
             name: true,
             email: true,
-            image: true
-          }
+            image: true,
+          },
         },
         category: true,
         tags: {
           include: {
-            tag: true
-          }
-        }
-      }
+            tag: true,
+          },
+        },
+      },
     });
 
     return article;
@@ -281,7 +487,7 @@ export class ArticlesService {
     await this.findOne(id);
 
     return await this.prisma.post.delete({
-      where: { id }
+      where: { id },
     });
   }
 
@@ -292,8 +498,8 @@ export class ArticlesService {
       where: { id },
       data: {
         published: true,
-        publishedAt: new Date()
-      }
+        publishedAt: new Date(),
+      },
     });
   }
 
@@ -303,8 +509,8 @@ export class ArticlesService {
     return await this.prisma.post.update({
       where: { id },
       data: {
-        published: false
-      }
+        published: false,
+      },
     });
   }
 }

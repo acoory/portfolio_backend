@@ -121,17 +121,17 @@ export class CategoriesService {
 
     const { slug: providedSlug, name, ...categoryData } = updateCategoryDto;
 
-    let updatedData = { ...categoryData };
+    let updatedData: any = { ...categoryData };
 
     if (name || providedSlug) {
       const nameToUse = name || existingCategory.name;
       const baseSlug = this.generateSlug(nameToUse, providedSlug);
       const uniqueSlug = await this.ensureUniqueSlug(baseSlug, id);
-      updatedData = { ...updatedData, slug: uniqueSlug };
+      updatedData.slug = uniqueSlug;
     }
 
     if (name) {
-      updatedData = { ...updatedData, name };
+      updatedData.name = name;
     }
 
     return await this.prisma.category.update({
