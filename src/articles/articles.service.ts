@@ -513,4 +513,128 @@ export class ArticlesService {
       },
     });
   }
+
+  async likePost(slug: string, ip: string) {
+    // Find the post first
+    const post = await this.prisma.post.findUnique({
+      where: { slug },
+    });
+
+    if (!post) {
+      throw new NotFoundException(`Article with slug ${slug} not found`);
+    }
+
+    // Hash the IP address
+    const hashedIp = this.hashIp(ip);
+
+    // Check if this IP has already liked this post
+    const existingLike = await this.prisma.postLiked.findUnique({
+      where: {
+        postId_likerIp: {
+          postId: post.id,
+          likerIp: hashedIp,
+        },
+      },
+    });
+
+    if (existingLike) {
+      throw new ConflictException('You have already liked this post');
+    }
+
+    // Create the like and increment the counter in a transaction
+    await this.prisma.$transaction([
+      this.prisma.postLiked.create({
+        data: {
+          postId: post.id,
+          likerIp: hashedIp,
+        },
+      }),
+      this.prisma.post.update({
+        where: { id: post.id },
+        data: { likeCount: { increment: 1 } },
+      }),
+    ]);
+
+    return {
+      success: true,
+      message: 'Post liked successfully',
+      likeCount: post.likeCount + 1,
+    };
+  }
+
+  async unlikePost(slug: string, ip: string) {
+    // Find the post first
+    const post = await this.prisma.post.findUnique({
+      where: { slug },
+    });
+
+    if (!post) {
+      throw new NotFoundException(`Article with slug ${slug} not found`);
+    }
+
+    // Hash the IP address
+    const hashedIp = this.hashIp(ip);
+
+    // Check if this IP has liked this post
+    const existingLike = await this.prisma.postLiked.findUnique({
+      where: {
+        postId_likerIp: {
+          postId: post.id,
+          likerIp: hashedIp,
+        },
+      },
+    });
+
+    if (!existingLike) {
+      throw new ConflictException('You have not liked this post');
+    }
+
+    // Delete the like and decrement the counter in a transaction
+    await this.prisma.$transaction([
+      this.prisma.postLiked.delete({
+        where: {
+          postId_likerIp: {
+            postId: post.id,
+            likerIp: hashedIp,
+          },
+        },
+      }),
+      this.prisma.post.update({
+        where: { id: post.id },
+        data: { likeCount: { decrement: 1 } },
+      }),
+    ]);
+
+    return {
+      success: true,
+      message: 'Post unliked successfully',
+      likeCount: Math.max(0, post.likeCount - 1),
+    };
+  }
+
+  async checkIfLiked(slug: string, ip: string): Promise<boolean> {
+    // Find the post first
+    const post = await this.prisma.post.findUnique({
+      where: { slug },
+    });
+
+    if (!post) {
+      throw new NotFoundException(`Article with slug ${slug} not found`);
+    }
+
+    // Hash the IP address
+    const hashedIp = this.hashIp(ip);
+
+    // Check if this IP has liked this post
+    const existingLike = await this.prisma.postLiked.findUnique({
+      where: {
+        postId_likerIp: {
+          postId: post.id,
+          likerIp: hashedIp,
+        },
+      },
+    });
+
+    return !!existingLike;
+  }
 }

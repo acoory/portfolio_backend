@@ -96,22 +96,24 @@ model Post {
   excerpt     String?   @db.Text
   content     String    @db.Text
   coverImage  String?
-  
+
   published   Boolean   @default(false)
   featured    Boolean   @default(false)
   viewCount   Int       @default(0)
-  
+  likeCount   Int       @default(0)
+
   authorId    String
   author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  
+
   categoryId  String
   category    Category  @relation(fields: [categoryId], references: [id])
 
-  views       PostViewed[]   
+  views       PostViewed[]
+  likes       PostLiked[]
 
   tags        PostTag[]
   comments    Comment[]
-  
+
   publishedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -129,13 +131,27 @@ model PostViewed {
   id        String   @id @default(cuid())
   postId    String
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  
+
   viewerIp  String
   viewedAt  DateTime @default(now())
 
   @@index([postId])
   @@index([viewerIp])
   @@map("post_viewed")
+}
+
+model PostLiked {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  likerIp   String
+  likedAt   DateTime @default(now())
+
+  @@index([postId])
+  @@index([likerIp])
+  @@unique([postId, likerIp])
+  @@map("post_liked")
 }
 
 model Category {

@@ -36,6 +36,7 @@ export class ArticlesController {
   }
 
   @Get('slug/:slug')
+  @AllowAnonymous()
   findBySlug(@Param('slug') slug: string, @Req() req: Request) {
     const ip =
       req.headers['x-forwarded-for']?.toString().split(',')[0] ||
@@ -67,5 +68,36 @@ export class ArticlesController {
   @Put(':id/unpublish')
   unpublish(@Param('id') id: string) {
     return this.articlesService.unpublish(id);
+  }
+
+  @Post('slug/:slug/like')
+  @AllowAnonymous()
+  likePost(@Param('slug') slug: string, @Req() req: Request) {
+    const ip =
+      req.headers['x-forwarded-for']?.toString().split(',')[0] ||
+      req.ip ||
+      'unknown';
+    return this.articlesService.likePost(slug, ip);
+  }
+
+  @Delete('slug/:slug/like')
+  @AllowAnonymous()
+  unlikePost(@Param('slug') slug: string, @Req() req: Request) {
+    const ip =
+      req.headers['x-forwarded-for']?.toString().split(',')[0] ||
+      req.ip ||
+      'unknown';
+    return this.articlesService.unlikePost(slug, ip);
+  }
+
+  @Get('slug/:slug/liked')
+  @AllowAnonymous()
+  async checkIfLiked(@Param('slug') slug: string, @Req() req: Request) {
+    const ip =
+      req.headers['x-forwarded-for']?.toString().split(',')[0] ||
+      req.ip ||
+      'unknown';
+    const isLiked = await this.articlesService.checkIfLiked(slug, ip);
+    return { isLiked };
   }
 }
