@@ -8,10 +8,13 @@ import { UpdateArticleDto } from './dto/update-article.dto';
 import { PrismaClient } from '../../generated/prisma';
 import slugify from 'slugify';
 import * as CryptoJS from 'crypto-js';
+import { TranslationService } from './translation.service';
 
 @Injectable()
 export class ArticlesService {
   private prisma = new PrismaClient();
+
+  constructor(private translationService: TranslationService) {}
 
   private hashIp(ip: string): string {
     return CryptoJS.SHA256(ip).toString();
@@ -43,6 +46,29 @@ export class ArticlesService {
     while (true) {
       const existing = await this.prisma.post.findUnique({
         where: { slug: uniqueSlug },
+      });
+
+      if (!existing || (excludeId && existing.id === excludeId)) {
+        break;
+      }
+
+      uniqueSlug = `${slug}-${counter}`;
+      counter++;
+    }
+
+    return uniqueSlug;
+  }
+
+  private async ensureUniqueEnglishSlug(
+    slug: string,
+    excludeId?: string,
+  ): Promise<string> {
+    let uniqueSlug = slug;
+    let counter = 1;
+
+    while (true) {
+      const existing = await this.prisma.post.findUnique({
+        where: { slug_en: uniqueSlug },
       });
 
       if (!existing || (excludeId && existing.id === excludeId)) {
@@ -158,11 +184,28 @@ export class ArticlesService {
       );
     }
 
+    // Translate to English automatically
+    const [titleEn, excerptEn, contentEn] = await Promise.all([
+      this.translationService.translateToEnglish(title),
+      articleData.excerpt
+        ? this.translationService.translateToEnglish(articleData.excerpt)
+        : Promise.resolve(''),
+      this.translationService.translateToEnglish(articleData.content),
+    ]);
+
+    // Generate English slug
+    const baseSlugEn = this.translationService.generateEnglishSlug(titleEn);
+    const uniqueSlugEn = await this.ensureUniqueEnglishSlug(baseSlugEn);
+
     const article = await this.prisma.post.create({
       data: {
         ...articleData,
         title,
         slug: uniqueSlug,
+        title_en: titleEn,
+        slug_en: uniqueSlugEn,
+        excerpt_en: excerptEn || null,
+        content_en: contentEn,
         categoryId: finalCategoryId,
         tags:
           tagConnections.length > 0
@@ -270,7 +313,8 @@ export class ArticlesService {
   }
 
   async findBySlug(slug: string, ip: string) {
-    const article = await this.prisma.post.findUnique({
+    // Try to find by French slug first, then English slug
+    let article = await this.prisma.post.findUnique({
       where: { slug },
       include: {
         author: {
@@ -308,6 +352,48 @@ export class ArticlesService {
         },
       },
     });
+
+    // If not found by French slug, try English slug
+    if (!article) {
+      article = await this.prisma.post.findUnique({
+        where: { slug_en: slug },
+        include: {
+          author: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
+          category: true,
+          tags: {
+            include: {
+              tag: true,
+            },
+          },
+          comments: {
+            include: {
+              author: {
+                select: {
+                  id: true,
+                  name: true,
+                  image: true,
+                },
+              },
+              replies: true,
+            },
+            where: {
+              approved: true,
+              parentId: null,
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+          },
+        },
+      });
+    }
 
     if (!article) {
       throw new NotFoundException(`Article with slug ${slug} not found`);
@@ -369,8 +455,54 @@ export class ArticlesService {
       updatedData.slug = uniqueSlug;
     }
 
+    // Collect all translations to do in parallel
+    const translationPromises: Promise<string>[] = [];
+    const translationFields: string[] = [];
+
     if (title) {
       updatedData.title = title;
+      translationPromises.push(this.translationService.translateToEnglish(title));
+      translationFields.push('title');
+    }
+
+    if (articleData.excerpt !== undefined) {
+      translationPromises.push(
+        articleData.excerpt
+          ? this.translationService.translateToEnglish(articleData.excerpt)
+          : Promise.resolve(''),
+      );
+      translationFields.push('excerpt');
+    }
+
+    if (articleData.content !== undefined) {
+      translationPromises.push(
+        this.translationService.translateToEnglish(articleData.content),
+      );
+      translationFields.push('content');
+    }
+
+    // Execute all translations in parallel
+    if (translationPromises.length > 0) {
+      const translations = await Promise.all(translationPromises);
+
+      // Apply translations to updatedData
+      let translationIndex = 0;
+      for (const field of translationFields) {
+        const translation = translations[translationIndex++];
+
+        if (field === 'title') {
+          updatedData.title_en = translation;
+
+          // Generate new English slug
+          const baseSlugEn = this.translationService.generateEnglishSlug(translation);
+          const uniqueSlugEn = await this.ensureUniqueEnglishSlug(baseSlugEn, id);
+          updatedData.slug_en = uniqueSlugEn;
+        } else if (field === 'excerpt') {
+          updatedData.excerpt_en = translation || null;
+        } else if (field === 'content') {
+          updatedData.content_en = translation;
+        }
+      }
     }
 
     // Handle category update - create if name is provided, otherwise use ID

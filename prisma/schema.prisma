@@ -15,20 +15,20 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   name          String
   email         String
-  emailVerified Boolean   @default(false)
+  emailVerified Boolean  @default(false)
   image         String?
-  role          Role      @default(USER)
-  bio           String?   @db.Text
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @default(now()) @updatedAt
-  
-  sessions      Session[]
-  accounts      Account[]
-  posts         Post[]
-  comments      Comment[]
+  role          Role     @default(USER)
+  bio           String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  sessions Session[]
+  accounts Account[]
+  posts    Post[]
+  comments Comment[]
 
   @@unique([email])
   @@map("user")
@@ -90,36 +90,42 @@ model Verification {
 // ============================================
 
 model Post {
-  id          String    @id @default(cuid())
-  title       String
-  slug        String    @unique
-  excerpt     String?   @db.Text
-  content     String    @db.Text
-  coverImage  String?
+  id         String  @id @default(cuid())
+  title      String
+  slug       String  @unique
+  excerpt    String? @db.Text
+  content    String  @db.Text
+  coverImage String?
 
-  published   Boolean   @default(false)
-  featured    Boolean   @default(false)
-  viewCount   Int       @default(0)
-  likeCount   Int       @default(0)
+  // English translations
+  title_en   String?
+  slug_en    String? @unique
+  excerpt_en String? @db.Text
+  content_en String? @db.Text
 
-  authorId    String
-  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  published Boolean @default(false)
+  featured  Boolean @default(false)
+  viewCount Int     @default(0)
+  likeCount Int     @default(0)
 
-  categoryId  String
-  category    Category  @relation(fields: [categoryId], references: [id])
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
-  views       PostViewed[]
-  likes       PostLiked[]
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
 
-  tags        PostTag[]
-  comments    Comment[]
+  views PostViewed[]
+  likes PostLiked[]
+
+  tags     PostTag[]
+  comments Comment[]
 
   publishedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-
   @@index([slug])
+  @@index([slug_en])
   @@index([authorId])
   @@index([categoryId])
   @@index([published])
@@ -128,12 +134,12 @@ model Post {
 }
 
 model PostViewed {
-  id        String   @id @default(cuid())
-  postId    String
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  viewerIp  String
-  viewedAt  DateTime @default(now())
+  viewerIp String
+  viewedAt DateTime @default(now())
 
   @@index([postId])
   @@index([viewerIp])
@@ -141,35 +147,39 @@ model PostViewed {
 }
 
 model PostLiked {
-  id        String   @id @default(cuid())
-  postId    String
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-  likerIp   String
-  likedAt   DateTime @default(now())
+  likerIp String
+  likedAt DateTime @default(now())
 
+  @@unique([postId, likerIp])
   @@index([postId])
   @@index([likerIp])
-  @@unique([postId, likerIp])
   @@map("post_liked")
 }
 
 model Category {
-  id          String     @id @default(cuid())
-  name        String     @unique
-  slug        String     @unique
-  description String?    @db.Text
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
+  description String? @db.Text
   color       String?
   icon        String?
-  
-  parentId    String?
-  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children    Category[] @relation("CategoryHierarchy")
-  
-  posts       Post[]
-  
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+
+  // English translations
+  name_en        String?
+  description_en String? @db.Text
+
+  parentId String?
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryHierarchy")
+
+  posts Post[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([slug])
   @@index([parentId])
@@ -177,26 +187,26 @@ model Category {
 }
 
 model Tag {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  slug      String    @unique
-  
-  posts     PostTag[]
-  
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id   String @id @default(cuid())
+  name String @unique
+  slug String @unique
+
+  posts PostTag[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([slug])
   @@map("tag")
 }
 
 model PostTag {
-  postId    String
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  
-  tagId     String
-  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
-  
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  tagId String
+  tag   Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
 
   @@id([postId, tagId])
@@ -206,23 +216,23 @@ model PostTag {
 }
 
 model Comment {
-  id        String    @id @default(cuid())
-  content   String    @db.Text
-  
-  authorId  String
-  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  
-  postId    String
-  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  
-  parentId  String?
-  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies   Comment[] @relation("CommentReplies")
-  
-  approved  Boolean   @default(true)
-  
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id      String @id @default(cuid())
+  content String @db.Text
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  parentId String?
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  Comment[] @relation("CommentReplies")
+
+  approved Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([postId])
   @@index([authorId])
@@ -230,6 +240,3 @@ model Comment {
   @@index([approved])
   @@map("comment")
 }
-
-
-
